@@ -2,8 +2,9 @@ import { RadixEngineToolkit, } from "@radixdlt/radix-engine-toolkit";
 import express from 'express';
 import { NETWORK } from "./common.js";
 const app = express();
-app.listen(5105, async function () {
-    console.log("Listening on port 5005!");
+const port = 5105;
+app.listen(port, async function () {
+    console.log("Listening on port " + port + "!");
 });
 app.get('/convert-to-babylon', async function (req, res) {
     const olympiaAddress = req.query['address'] || "";

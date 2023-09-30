@@ -1,8 +1,14 @@
 import { RadixEngineToolkit, } from "@radixdlt/radix-engine-toolkit";
 import express from 'express';
 import { NETWORK } from "./common.js";
+import * as fs from "fs";
+import * as readline from "readline";
 const app = express();
 const port = 5105;
+const ACCOUNTS_FILE = "./data/accounts-dict.csv";
+const OLYMPIA_ACC_PREFIX = "rdx1qsp";
+const BABYLON_ACC_PREFIX = "account_rdx16";
+let ACCOUNTS_DICT = new Map();
 app.use((req, res, next) => {
     if (!/^POST$/.test(req.method)) {
         if (!req.headers['content-type']) {
@@ -11,11 +17,35 @@ app.use((req, res, next) => {
     }
     return next();
 });
+async function readAccountsDict() {
+    const inputStream = fs.createReadStream(ACCOUNTS_FILE);
+    let accounts = new Map();
+    readline.createInterface({
+        input: inputStream,
+        terminal: false,
+    }).on("line", function (line) {
+        let parts = line.split(",");
+        accounts.set(BABYLON_ACC_PREFIX + parts[0], OLYMPIA_ACC_PREFIX + parts[1]);
+    }).on("close", function () {
+        ACCOUNTS_DICT = accounts;
+    });
+}
 app.listen(port, async function () {
     console.log("Listening on port " + port + "!");
+    await readAccountsDict();
+    console.log("done!");
 });
 async function olympiaToBabylon(olympiaAddress) {
     return await RadixEngineToolkit.Derive.virtualAccountAddressFromOlympiaAccountAddress(olympiaAddress, NETWORK);
+}
+async function isBabylonValid(babylonAddress) {
+    try {
+        let decoded = await RadixEngineToolkit.Address.decode(babylonAddress);
+        return !!(decoded && decoded.hrp);
+    }
+    catch (e) {
+        return false;
+    }
 }
 app.get('/convert-to-babylon', async function (req, res) {
     const olympiaAddress = req.query["address"] || "";
@@ -54,7 +84,6 @@ app.post('/convert-to-babylon-batch', express.text(), async function (req, res) 
 app.post('/convert-to-babylon-batch.json', express.text({ type: "application/json" }), async function (req, res) {
     try {
         let body = null;
-        console.log(req.body);
         try {
             body = JSON.parse(req.body);
         }
@@ -88,6 +117,44 @@ app.post('/convert-to-babylon-batch.json', express.text({ type: "application/jso
             error: e.message
         });
     }
+});
+app.get('/convert-to-olympia', async function (req, res) {
+    if (ACCOUNTS_DICT.size == 0) {
+        return res.status(500).send("Not initialized!");
+    }
+    const babylonAddress = req.query["address"] || "";
+    let valid = await isBabylonValid(babylonAddress);
+    if (!valid) {
+        return res.status(400).send("Invalid Babylon address");
+    }
+    const olympiaAddress = ACCOUNTS_DICT.get(babylonAddress);
+    if (!olympiaAddress) {
+        return res.status(404).send("Address did not have any balance in Olympia");
+    }
+    return res.status(200).send(olympiaAddress);
+});
+app.get('/convert-to-olympia.json', async function (req, res) {
+    if (ACCOUNTS_DICT.size == 0) {
+        return res.status(500).send({
+            error: "Not initialized!"
+        });
+    }
+    const babylonAddress = req.query['address'] || "";
+    let valid = await isBabylonValid(babylonAddress);
+    if (!valid) {
+        return res.status(400).send({
+            error: "Invalid Babylon address"
+        });
+    }
+    const olympiaAddress = ACCOUNTS_DICT.get(babylonAddress);
+    if (!olympiaAddress) {
+        return res.status(404).send({
+            error: "Address did not have any balance in Olympia"
+        });
+    }
+    res.status(200).json({
+        "result": olympiaAddress
+    });
 });
 process.on('exit', function () {
     console.log('Process terminating.');

@@ -1,6 +1,6 @@
-import { RadixEngineToolkit, } from "@radixdlt/radix-engine-toolkit";
+import { RadixEngineToolkit, SerializationMode } from "@radixdlt/radix-engine-toolkit";
 import express from 'express';
-import { NETWORK } from "./common.js";
+import { fromHexString, NETWORK } from "./common.js";
 import * as fs from "fs";
 import * as readline from "readline";
 const app = express();
@@ -155,6 +155,34 @@ app.get('/convert-to-olympia.json', async function (req, res) {
     res.status(200).json({
         "result": olympiaAddress
     });
+});
+async function getProgrammaticJson(hex, network) {
+    let bytes = fromHexString(hex);
+    return RadixEngineToolkit.ScryptoSbor.decodeToString(bytes, Number(network), SerializationMode.Programmatic);
+}
+app.get('/convert-to-readable', async function (req, res) {
+    const hex = req.query["hex"] || "";
+    const network = req.query["networkId"] || "1";
+    if (!hex) {
+        return res.status(400).send("'hex' should not be empty!");
+    }
+    try {
+        // check if it's just a hex of an address (reference)
+        let reference = await getProgrammaticJson('5c90' + hex, network);
+        let json = JSON.parse(reference);
+        return res.status(200).send(json.value);
+    }
+    catch (e) {
+        // Failure. Try to treat it as programmatic JSON
+        try {
+            let json = await getProgrammaticJson(hex, network);
+            return res.status(200).send(json);
+        }
+        catch (ee) {
+            // ignore
+        }
+        return res.status(400).send("Invalid address hex. Error: " + e.message);
+    }
 });
 process.on('exit', function () {
     console.log('Process terminating.');

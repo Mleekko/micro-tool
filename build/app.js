@@ -1,6 +1,6 @@
 import { RadixEngineToolkit, SerializationMode } from "@radixdlt/radix-engine-toolkit";
 import express from 'express';
-import { fromHexString, NETWORK } from "./common.js";
+import { fromHexString, NETWORK, toHexString } from "./common.js";
 import * as fs from "fs";
 import * as readline from "readline";
 const app = express();
@@ -68,12 +68,17 @@ app.post('/convert-to-babylon-batch', express.text(), async function (req, res) 
     try {
         let results = new Array(lines.length);
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            await RadixEngineToolkit.Derive.virtualAccountAddressFromOlympiaAccountAddress(line, NETWORK).then((result) => {
-                results[i] = result;
-            }, () => {
-                results[i] = "null";
-            });
+            const line = lines[i].trim();
+            if (line) {
+                await RadixEngineToolkit.Derive.virtualAccountAddressFromOlympiaAccountAddress(line, NETWORK).then((result) => {
+                    results[i] = result;
+                }, () => {
+                    results[i] = "null";
+                });
+            }
+            else {
+                results[i] = lines[i];
+            }
         }
         res.status(200).send(results.join("\n"));
     }
@@ -183,6 +188,23 @@ app.get('/convert-to-readable', async function (req, res) {
         }
         return res.status(400).send("Invalid address hex. Error: " + e.message);
     }
+});
+async function refToHex(ref) {
+    const programmaticJson = {
+        kind: "Reference",
+        value: ref,
+    };
+    let bytes = await RadixEngineToolkit.ScryptoSbor.encodeProgrammaticJson(programmaticJson);
+    return toHexString(bytes).substring(4); // remove the "ref" type prefix
+}
+app.get('/convert-to-hex', async function (req, res) {
+    const ref = req.query["ref"] || "";
+    if (!ref) {
+        return res.status(400).send("'ref' should not be empty!");
+    }
+    // check if it's just a ref of an address (reference)
+    let hex = await refToHex(ref);
+    return res.status(200).send(hex);
 });
 process.on('exit', function () {
     console.log('Process terminating.');
